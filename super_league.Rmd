@@ -25,6 +25,7 @@ TODO:
 library(tidyverse)
 library(httr)
 library(jsonlite)
+library(flextable)
 
 knitr::opts_chunk$set(echo = TRUE)
 options(dplyr.summarise.inform = FALSE)
@@ -33,7 +34,7 @@ options(dplyr.summarise.inform = FALSE)
 # Read in data
 
 ```{r}
-df_matches <- read.csv(file = "../datasets/current/df_matches.csv")
+df_matches <- read.csv(file = "../fumbbl_datasets/datasets/current/df_matches.csv")
 df_matches <- df_matches %>%
   filter(group_id == 15615) # TSL
 
@@ -42,7 +43,7 @@ df_matches$week_date <- as.Date(df_matches$week_date)
 ```
 
 ```{r}
-df_mbt <- read.csv(file = "../datasets/current/df_mbt.csv")
+df_mbt <- read.csv(file = "../fumbbl_datasets/datasets/current/df_mbt.csv")
 df_mbt <- df_mbt %>%
   filter(group_id == 15615) # TSL
 
@@ -106,8 +107,6 @@ all_matches <- all_matches %>%
 
 need a for loop to get rid of all the nested data.frames.
 
-
-
 ```{r}
 colnames(all_matches)
 all_matches$home_team_id <- NA
@@ -126,34 +125,82 @@ all_matches$teams <- NULL
 all_matches$result.teams <- NULL
 
 all_matches <- all_matches %>% rename(match_id = result.id)
+
+all_matches <- all_matches %>%
+  rename(team_id = home_team_id) %>%
+  rename(team_score = home_score) 
 ```
 
-create all_mbt
-or add missing matches to df_matches , then recreate df_mbt?
+next: create all_mbt, i.e. duplicate all matches with home/away reversed.
+
+for now just enrich with data needed to make the leaderboard.
+
+```{r}
+all_matches2 <- all_matches %>%
+  mutate(home_team_id_tmp = team_id,
+         home_score_tmp = team_score) %>%
+  mutate(team_id = away_team_id,
+         team_score = away_score) %>%
+  mutate(away_team_id = home_team_id_tmp,
+         away_score = home_score_tmp) %>%
+  select(-home_team_id_tmp, -home_score_tmp)
+
+all_matches <- rbind(all_matches, all_matches2)
+```
+
+```{r}
+all_matches <- all_matches %>%
+  left_join(df_mbt %>% select(tournament_id, match_id, team_id, coach_id, coach_name, home_cas, away_cas), by = c("tournament_id", "match_id", "team_id"))
+  
+```
+
+add missing coach_ids and coachnames:
+
+```{r}
+# create full team/coach list
+coaches <- all_matches %>% 
+  select(team_id, coach_id, coach_name) %>% 
+  drop_na() %>% 
+  distinct()
+
+all_matches <- all_matches %>% 
+  select(-coach_id, -coach_name) %>%
+  left_join(coaches, by = "team_id")
+```
+
+```{r}
+# derive wins column
+all_matches <- all_matches %>%
+  mutate(wins = 1) %>%
+  mutate(wins = ifelse(team_score == away_score, 0.5, wins)) %>%
+  mutate(wins = ifelse(team_score < away_score, 0, wins)) %>%
+  mutate(wins = ifelse(match_id == 0 & result.winner == team_id, 1, wins)) %>%
+  mutate(wins = ifelse(match_id == 0 & result.winner != team_id, 0, wins))
+```
+
 
 # Check data: recreate leaderboard
 https://fumbbl.com/p/group?op=view&at=1&group=15615&p=tournaments&show=58588
 
 ```{r}
-library(flextable)
-
-df_mbt %>% filter(tournament_id == 58588) %>% 
-  arrange(match_date) %>%
+all_matches %>% filter(tournament_id == 58588) %>% 
+  arrange(round) %>%
   group_by(coach_name) %>%
   summarise(G = n(), 
             W = sum(if_else(wins == 1, 1, 0)),
             T = sum(if_else(wins == 0.5, 1, 0)),
             L = sum(if_else(wins == 0, 1, 0)),
             TDfor = sum(team_score),
-            TDmin = sum(away_team_score),
-            CASfor = sum(home_cas),
-            CASmin = sum(away_cas)) %>%
+            TDmin = sum(away_score),
+            CASfor = sum(home_cas, na.rm = T),
+            CASmin = sum(away_cas, na.rm = T)) %>%
   mutate(TDdelta = TDfor - TDmin,
          CASdelta = CASfor - CASmin,
          tie_breaker = TDdelta + CASdelta,
          score = W*2 + T) %>%
   arrange(-score) %>% regulartable() %>% autofit() 
 ```
+
 ![](leaderboard_58588.png)
 
 
