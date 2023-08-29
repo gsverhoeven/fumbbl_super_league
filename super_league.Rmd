@@ -14,11 +14,8 @@ Go to folder datasets/v0.6
 extract Zip file into datasets/current
 
 
-TODO:
+- tournament needs to be dropped.
 
--fix coach problem (>8 coach names)
--57864 tournament needs to be dropped.
--Need to add scores (tie breakers).
 
 
 ```{r setup, include=FALSE}
@@ -34,18 +31,22 @@ options(dplyr.summarise.inform = FALSE)
 # Read in data
 
 ```{r}
-df_matches <- read.csv(file = "../fumbbl_datasets/datasets/current/df_matches.csv")
+df_matches <- read.csv(file = "../fumbbl_datasets/datasets/v0.6/df_matches.csv")
 df_matches <- df_matches %>%
-  filter(group_id == 15615) # TSL
+  filter(group_id == 15615) %>% # TSL
+  filter(tournament_id != 57864) %>%
+  filter(tournament_id != 59504)
 
 df_matches$match_date <- as.Date(df_matches$match_date)
 df_matches$week_date <- as.Date(df_matches$week_date)
 ```
 
 ```{r}
-df_mbt <- read.csv(file = "../fumbbl_datasets/datasets/current/df_mbt.csv")
+df_mbt <- read.csv(file = "../fumbbl_datasets/datasets/v0.6/df_mbt.csv")
 df_mbt <- df_mbt %>%
-  filter(group_id == 15615) # TSL
+  filter(group_id == 15615)  %>% # TSL
+  filter(tournament_id != 57864) %>%
+  filter(tournament_id != 59504)
 
 df_mbt$match_date <- as.Date(df_mbt$match_date)
 df_mbt$week_date <- as.Date(df_mbt$week_date)
@@ -96,11 +97,15 @@ if(fullrun){
 }
 ```
 
+
+
 ```{r}
 all_matches <- all_matches %>% 
   left_join(df_matches %>% 
               select(tournament_id, tournament_name, season, level) %>% distinct(), by = "tournament_id") %>%
-  select(-position) %>% filter(tournament_id == 58588)
+  select(-position) %>% 
+  filter(tournament_id != 57864) %>%
+  filter(tournament_id != 59504)
 ```
 
 # integrate with df_matches
@@ -145,47 +150,73 @@ all_matches2 <- all_matches %>%
          away_score = home_score_tmp) %>%
   select(-home_team_id_tmp, -home_score_tmp)
 
-all_matches <- rbind(all_matches, all_matches2)
+all_mbt <- rbind(all_matches, all_matches2)
 ```
 
+# Fetch coach names from team_ids
+
+This is necessary because not all coaches actually played matches.
+There are also coaches that did not play ANY matches, so we do not have their coach name.
+
+
 ```{r}
-all_matches <- all_matches %>%
-  left_join(df_mbt %>% select(tournament_id, match_id, team_id, coach_id, coach_name, home_cas, away_cas), by = c("tournament_id", "match_id", "team_id"))
+fullrun <- 0
+teams <- unique(all_mbt$team_id)
+
+if(fullrun){
+  i <- 0
+  for (team_id in teams){
+    url <- paste0("https://fumbbl.com/api/team/get/", team_id)
+    res <- GET(url)
+    if ( i == 0) all_teams <- data.frame(team_id, flatten(as.data.frame(fromJSON(rawToChar(res$content))$coach)))
+    else all_teams <- rbind(all_teams, data.frame(team_id, flatten(as.data.frame(fromJSON(rawToChar(res$content))$coach))))
+    i <- i+1
+  }
+  saveRDS(all_teams, file = "all_teams.rds")
+} else {
+  all_teams <- readRDS("all_teams.rds")
+}
+```
+
+
+add cas to all_mbt:
+
+```{r}
+all_mbt <- all_mbt %>%
+  left_join(df_mbt %>% select(tournament_id, match_id, team_id, home_cas, away_cas), by = c("tournament_id", "match_id", "team_id"))
   
 ```
 
-add missing coach_ids and coachnames:
+fill in missing coach_ids and coachnames:
 
 ```{r}
-# create full team/coach list
-coaches <- all_matches %>% 
-  select(team_id, coach_id, coach_name) %>% 
-  drop_na() %>% 
-  distinct()
-
-all_matches <- all_matches %>% 
-  select(-coach_id, -coach_name) %>%
-  left_join(coaches, by = "team_id")
+all_mbt2 <- all_mbt %>% 
+  #select(-coach_id, -coach_name) %>%
+  left_join(all_teams, by = c("team_id"))
 ```
+
 
 ```{r}
 # derive wins column
-all_matches <- all_matches %>%
+all_mbt2 <- all_mbt2 %>%
   mutate(wins = 1) %>%
   mutate(wins = ifelse(team_score == away_score, 0.5, wins)) %>%
   mutate(wins = ifelse(team_score < away_score, 0, wins)) %>%
   mutate(wins = ifelse(match_id == 0 & result.winner == team_id, 1, wins)) %>%
   mutate(wins = ifelse(match_id == 0 & result.winner != team_id, 0, wins))
+
+all_mbt2 <- all_mbt2 %>%
+  rename(coach_name = name)
 ```
 
 
-# Check data: recreate leaderboard
+# Check data: recreate leaderboards
 https://fumbbl.com/p/group?op=view&at=1&group=15615&p=tournaments&show=58588
 
 ```{r}
-all_matches %>% filter(tournament_id == 58588) %>% 
+main_board <- all_mbt2 %>% 
   arrange(round) %>%
-  group_by(coach_name) %>%
+  group_by(tournament_id, tournament_name, coach_name) %>%
   summarise(G = n(), 
             W = sum(if_else(wins == 1, 1, 0)),
             T = sum(if_else(wins == 0.5, 1, 0)),
@@ -198,10 +229,32 @@ all_matches %>% filter(tournament_id == 58588) %>%
          CASdelta = CASfor - CASmin,
          tie_breaker = TDdelta + CASdelta,
          score = W*2 + T) %>%
-  arrange(-score) %>% regulartable() %>% autofit() 
+  arrange(-score) #%>% regulartable() %>% autofit() 
 ```
 
 ![](leaderboard_58588.png)
+
+```{r}
+writexl::write_xlsx(main_board, "main_board.xlsx")
+```
+
+eyeball who replaced who.
+
+# read back in: fix replacement coaches
+
+```{r}
+main_board <- readxl::read_excel("main_board_replacedby.xlsx")
+
+replaced_by <- main_board %>% 
+  select(tournament_id, coach_name, replaced_by) %>% 
+  drop_na()
+```
+
+fix all_mbt2
+
+```{r}
+
+```
 
 
 
