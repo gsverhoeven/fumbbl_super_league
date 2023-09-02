@@ -13,11 +13,6 @@ Do github clone repo: https://github.com/gsverhoeven/fumbbl_datasets/
 Go to folder datasets/v0.6
 extract Zip file into datasets/current
 
-
-- tournament needs to be dropped.
-
-
-
 ```{r setup, include=FALSE}
 library(tidyverse)
 library(httr)
@@ -31,28 +26,42 @@ options(dplyr.summarise.inform = FALSE)
 # Read in data
 
 ```{r}
-df_matches <- read.csv(file = "../fumbbl_datasets/datasets/v0.6/df_matches.csv")
-df_matches <- df_matches %>%
-  filter(group_id == 15615) %>% # TSL
-  filter(tournament_id != 57864) %>%
-  filter(tournament_id != 59504)
+fullrun <- 0
 
-df_matches$match_date <- as.Date(df_matches$match_date)
-df_matches$week_date <- as.Date(df_matches$week_date)
+if(fullrun){
+  df_matches <- read.csv(file = "../fumbbl_datasets/datasets/current/df_matches.csv") # PM do unzip
+  df_matches <- df_matches %>%
+    filter(group_id == 15615) %>% # TSL
+    filter(tournament_id != 57864) %>%
+    filter(tournament_id != 59504)
+  
+  df_matches$match_date <- as.Date(df_matches$match_date)
+  df_matches$week_date <- as.Date(df_matches$week_date)
+  saveRDS(df_matches, "df_matches_tsl.rds")
+} else {
+  df_matches <- readRDS("df_matches_tsl.rds")
+}
 ```
 
 ```{r}
-df_mbt <- read.csv(file = "../fumbbl_datasets/datasets/v0.6/df_mbt.csv")
-df_mbt <- df_mbt %>%
-  filter(group_id == 15615)  %>% # TSL
-  filter(tournament_id != 57864) %>%
-  filter(tournament_id != 59504)
+fullrun <- 0
 
-df_mbt$match_date <- as.Date(df_mbt$match_date)
-df_mbt$week_date <- as.Date(df_mbt$week_date)
-
-df_mbt[df_mbt$race_name == "Khorne",]$bb2020_nov21_tier <- 2
-df_mbt[df_mbt$race_name == "Khorne",]$bb2020_tier <- 2
+if(fullrun){
+  df_mbt <- read.csv(file = "../fumbbl_datasets/datasets/current/df_mbt.csv")
+  df_mbt <- df_mbt %>%
+    filter(group_id == 15615)  %>% # TSL
+    filter(tournament_id != 57864) %>%
+    filter(tournament_id != 59504)
+  
+  df_mbt$match_date <- as.Date(df_mbt$match_date)
+  df_mbt$week_date <- as.Date(df_mbt$week_date)
+  
+  df_mbt[df_mbt$race_name == "Khorne",]$bb2020_nov21_tier <- 2
+  df_mbt[df_mbt$race_name == "Khorne",]$bb2020_tier <- 2
+  saveRDS(df_mbt, "df_mbt_tsl.rds")
+} else {
+  df_mbt <- readRDS("df_mbt_tsl.rds")
+}
 ```
 
 Fix coach name changes
@@ -64,7 +73,8 @@ df_mbt[df_mbt$coach_name == "Edwin25301",]$coach_name <- "Edwin"
 # Add seasons, levels
 
 ```{r}
-cl <- as_tibble(read.csv2("spl_seasons_div.csv")) %>% select(-tournament_name)
+cl <- as_tibble(read.csv2("spl_seasons_div.csv")) %>% 
+  select(-tournament_name)
 ```
 
 ```{r}
@@ -151,6 +161,7 @@ all_matches2 <- all_matches %>%
   select(-home_team_id_tmp, -home_score_tmp)
 
 all_mbt <- rbind(all_matches, all_matches2)
+rm(all_matches, all_matches2)
 ```
 
 # Fetch coach names from team_ids
@@ -179,18 +190,18 @@ if(fullrun){
 ```
 
 
-add cas to all_mbt:
+add match stats (cas etc) to all_mbt:
 
 ```{r}
 all_mbt <- all_mbt %>%
-  left_join(df_mbt %>% select(tournament_id, match_id, team_id, home_cas, away_cas), by = c("tournament_id", "match_id", "team_id"))
+  left_join(df_mbt %>% select(tournament_id, match_id, team_id,home_comp, home_pass, home_rush, home_block, home_foul, home_cas, away_cas), by = c("tournament_id", "match_id", "team_id"))
   
 ```
 
 fill in missing coach_ids and coachnames:
 
 ```{r}
-all_mbt2 <- all_mbt %>% 
+all_mbt <- all_mbt %>% 
   #select(-coach_id, -coach_name) %>%
   left_join(all_teams, by = c("team_id"))
 ```
@@ -198,14 +209,14 @@ all_mbt2 <- all_mbt %>%
 
 ```{r}
 # derive wins column
-all_mbt2 <- all_mbt2 %>%
+all_mbt <- all_mbt %>%
   mutate(wins = 1) %>%
   mutate(wins = ifelse(team_score == away_score, 0.5, wins)) %>%
   mutate(wins = ifelse(team_score < away_score, 0, wins)) %>%
   mutate(wins = ifelse(match_id == 0 & result.winner == team_id, 1, wins)) %>%
   mutate(wins = ifelse(match_id == 0 & result.winner != team_id, 0, wins))
 
-all_mbt2 <- all_mbt2 %>%
+all_mbt <- all_mbt %>%
   rename(coach_name = name)
 ```
 
@@ -214,7 +225,7 @@ all_mbt2 <- all_mbt2 %>%
 https://fumbbl.com/p/group?op=view&at=1&group=15615&p=tournaments&show=58588
 
 ```{r}
-main_board <- all_mbt2 %>% 
+main_board <- all_mbt %>% 
   arrange(round) %>%
   group_by(tournament_id, tournament_name, coach_name) %>%
   summarise(G = n(), 
@@ -228,11 +239,9 @@ main_board <- all_mbt2 %>%
   mutate(TDdelta = TDfor - TDmin,
          CASdelta = CASfor - CASmin,
          tie_breaker = TDdelta + CASdelta,
-         score = W*2 + T) %>%
-  arrange(-score) #%>% regulartable() %>% autofit() 
+         score = W*2 + T) 
 ```
 
-![](leaderboard_58588.png)
 
 ```{r}
 writexl::write_xlsx(main_board, "main_board.xlsx")
@@ -250,23 +259,76 @@ replaced_by <- main_board %>%
   drop_na()
 ```
 
-fix all_mbt2
+fix `all_mbt` with dropout replacements:
+
+should fix by replacing also team_id, coach_id
 
 ```{r}
+all_mbt <- all_mbt %>%
+  left_join(replaced_by, by = c("tournament_id", "coach_name")) %>%
+    mutate(coach_name = ifelse(!is.na(replaced_by), replaced_by, coach_name)) %>%
+  select(-replaced_by)
+```
 
+# add race, fix coach and team id
+
+
+```{r}
+all_mbt <- all_mbt %>%
+  select(-team_id, -id) %>%
+  left_join(df_mbt %>% select(tournament_id, team_id, coach_id, coach_name, race_name) %>% distinct(), by = c("tournament_id", "coach_name"))
+```
+
+note to self: 
+-team name still missing
+-away team_id should also be fixed (or dropped), and result.winner.
+-away_race_name missing
+
+# fix NAs for home and away cas in adminned matches
+
+```{r}
+all_mbt <- all_mbt %>% 
+  mutate(home_cas = ifelse(is.na(home_cas), 0, home_cas),
+         away_cas = ifelse(is.na(away_cas), 0, away_cas))
 ```
 
 
-
-# Generate coach / match counts by tournbament
+# final check: compare with leaderboard on fumbbl
 
 ```{r}
-res <- df_mbt %>%
-  group_by(tournament_id, tournament_name, coach_name, season, level) %>%
-  summarise(n_matches = n_distinct(match_id))
-
-writexl::write_xlsx(res, "spl_seasons_div2.xlsx")
+all_mbt %>% 
+  arrange(round) %>%
+  filter(tournament_id == 58588) %>%
+  group_by(tournament_id, tournament_name, coach_name, race_name) %>%
+  summarise(G = n(), 
+            W = sum(if_else(wins == 1, 1, 0)),
+            T = sum(if_else(wins == 0.5, 1, 0)),
+            L = sum(if_else(wins == 0, 1, 0)),
+            TDfor = sum(team_score),
+            TDmin = sum(away_score),
+            CASfor = sum(home_cas),
+            CASmin = sum(away_cas)) %>%
+  mutate(TDdelta = TDfor - TDmin,
+         CASdelta = CASfor - CASmin,
+         tie_breaker = TDdelta + CASdelta,
+         score = W*2 + T) %>%
+  arrange(-score,-tie_breaker) 
 ```
+
+![](leaderboard_58588.png)
+
+# last manual fix
+
+dekra1979 replaced Joemanji but did not play any match, so we do not have a team_id, coach_id and race_name.
+Add manually.
+
+```{r}
+all_mbt <- all_mbt %>%
+  mutate(team_id = ifelse(coach_name == "dekra1979" & tournament_id == 58580, 1101431, team_id),
+         coach_id = ifelse(coach_name == "dekra1979" & tournament_id == 58580, 130219, coach_id),
+         race_name = ifelse(coach_name == "dekra1979" & tournament_id == 58580, "Skaven", race_name))
+```
+
 
 # narrative blog post
 
@@ -378,16 +440,15 @@ Placements from Season 0 and coaches who dropped out during a running season do 
 
 Seeding are handled in sheets atm.
 
-# Straight up win rates 
+# ANALYSIS Straight up win rates 
 
 ```{r fig.height= 8, fig.width = 8}
-res <- df_mbt %>%
-  filter(group_id == 15615) %>%
-  group_by(race_name, race_type, bb2020_nov21_tier) %>%
+res <- all_mbt %>%
+  group_by(race_name) %>%
   summarise(n_games = n(),
             win_rate = mean(wins))
 
-ggplot(res, aes(x = reorder(race_name, win_rate), y = win_rate, col = factor(bb2020_nov21_tier))) +
+ggplot(res, aes(x = reorder(race_name, win_rate), y = win_rate)) +
   geom_point(aes(size = n_games)) + coord_flip() + expand_limits(y = 0) +
   scale_size_area() + ggtitle("FUMBBL Super League win rates ") +
   labs(y = "Win rate (%)", x = "") + geom_hline( yintercept =  0.5, col = "black")
@@ -403,11 +464,9 @@ res_list$main_result
 
 # Win rates by coach
 
-Check changes over time in the win rates:
 
 ```{r fig.height= 8, fig.width = 8}
 res <- df_mbt %>%
-  filter(group_id == 15615) %>%
   group_by(coach_name) %>%
   summarise(n_games = n(),
             win_rate = mean(wins))
