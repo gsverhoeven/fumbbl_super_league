@@ -5,6 +5,7 @@ date: '2023-08-03'
 output: pdf_document
 ---
 
+add promotions/ relegations for S3
 
 # HOW TO RUN:
 
@@ -292,6 +293,30 @@ all_mbt <- all_mbt %>%
          away_cas = ifelse(is.na(away_cas), 0, away_cas))
 ```
 
+# last manual fix
+
+dekra1979 replaced Joemanji but did not play any match, so we do not have a team_id, coach_id and race_name.
+Add manually.
+
+```{r}
+all_mbt <- all_mbt %>%
+  mutate(team_id = ifelse(coach_name == "dekra1979" & tournament_id == 58580, 1101431, team_id),
+         coach_id = ifelse(coach_name == "dekra1979" & tournament_id == 58580, 130219, coach_id),
+         race_name = ifelse(coach_name == "dekra1979" & tournament_id == 58580, "Skaven", race_name))
+```
+
+# add TSL tiers
+
+```{r}
+#tsl_tiers <- data.frame(race_name = unique(all_mbt$race_name), tsl_tier = -1)
+#writexl::write_xlsx(tsl_tiers, "tsl_tiers.xlsx")
+
+tsl_tiers <- readxl::read_excel("tsl_tiers.xlsx")
+
+all_mbt <- all_mbt %>%
+  left_join(tsl_tiers, by = "race_name")
+```
+
 
 # final check: compare with leaderboard on fumbbl
 
@@ -317,17 +342,7 @@ all_mbt %>%
 
 ![](leaderboard_58588.png)
 
-# last manual fix
 
-dekra1979 replaced Joemanji but did not play any match, so we do not have a team_id, coach_id and race_name.
-Add manually.
-
-```{r}
-all_mbt <- all_mbt %>%
-  mutate(team_id = ifelse(coach_name == "dekra1979" & tournament_id == 58580, 1101431, team_id),
-         coach_id = ifelse(coach_name == "dekra1979" & tournament_id == 58580, 130219, coach_id),
-         race_name = ifelse(coach_name == "dekra1979" & tournament_id == 58580, "Skaven", race_name))
-```
 
 
 # narrative blog post
@@ -336,7 +351,11 @@ relationship with Elo/Glicko.
 What is the purpose of the system?
 We want to know who is currently the best.
 We cannot let everybody play everybody, we have a limited number of "measurements".
+Various tournament structures.
+Advantage that one plays against its own peers, at their own level.
+Sports can be enjoyed at different levels.
 
+Is the tiering system working properly? What races are promoted, and what races are relegated?
 
 # WHAT IS THE SUPER LEAGUE?
 
@@ -359,6 +378,100 @@ The league placing belongs to the **coach**.
 So you can swap teams (between seasons) and retain your ranking. 
 Coaches who are brand new will start from the bottom and have to work their way up.
 
+## Try to work out who are relegated
+
+do in a two step. we add final standings. Then we encode manually and export.
+
+```{r}
+main_board <- all_mbt %>% 
+  filter(season %in% c(1,2)) %>%
+  arrange(round) %>%
+  group_by(tournament_id, season, tournament_name, coach_name, race_name) %>%
+  summarise(G = n(), 
+            W = sum(if_else(wins == 1, 1, 0)),
+            T = sum(if_else(wins == 0.5, 1, 0)),
+            L = sum(if_else(wins == 0, 1, 0)),
+            TDfor = sum(team_score),
+            TDmin = sum(away_score),
+            CASfor = sum(home_cas),
+            CASmin = sum(away_cas)) %>%
+  mutate(TDdelta = TDfor - TDmin,
+         CASdelta = CASfor - CASmin,
+         tie_breaker = TDdelta + CASdelta,
+         score = W*2 + T) %>%
+  arrange(tournament_id, -score,-tie_breaker) 
+
+main_board$position <- rep(1:8, nrow(main_board)/8) 
+
+#writexl::write_xlsx(main_board %>% select(season, tournament_id, tournament_name, coach_name, position), "promotion_relegation_structure_.xlsx")
+promotion_relegation_structure <- readxl::read_excel("promotion_relegation_structure.xlsx")
+
+all_mbt <- all_mbt %>%
+  left_join(promotion_relegation_structure %>% select(tournament_id, coach_name, action), by = c("tournament_id", "coach_name"))
+```
+
+# create seedings and standings 
+
+
+
+```{r}
+res <- all_mbt %>% filter(season == 2) %>% 
+  group_by(coach_name, coach_id, season, level, action) %>% 
+  summarise(n = n()) %>% 
+  arrange(level)
+
+all_mbt <- all_mbt %>% 
+  mutate(next_level = -1,
+         next_level = ifelse(action == "relegate", level + 1, next_level),
+         next_level = ifelse(action %in% c("remain", "champion"), level, next_level),
+         next_level = ifelse(action == "promote", level - 1, next_level))
+
+s1s2 <- all_mbt %>% filter(season != 0) %>% 
+  group_by(coach_name, coach_id, season, level) %>% 
+  summarise(n = n()) %>% 
+  arrange(level)
+
+s3 <- all_mbt %>% filter(season == 2) %>% 
+  group_by(coach_name, coach_id, season, next_level) %>% 
+  summarise(n = n()) %>% 
+  rename(level = next_level) %>%
+  mutate(season = 3) %>%
+  arrange(level)
+
+coach_levels <- rbind(s1s2, s3)
+
+coach_sel <- coach_levels %>% 
+  filter(season == 3 & level %in% c(1,2))  %>%
+  pull(coach_name)
+
+gp <- ggplot(coach_levels %>% filter(coach_name %in% coach_sel), aes(y = reorder(coach_name, -level), x = season)) +
+  geom_tile(aes(fill = -level), color = "white", lwd = 1.5, linetype = 1) +
+  geom_text(aes(label = level), color = "white", size = 2) +
+  scale_x_discrete(position = "top") + 
+  coord_fixed(0.5) +
+  ylab("") +
+  theme_bw() +
+  theme(legend.position="none")  
+
+ggsave("rel_pro_coaches.png", gp, width = 400, height = 800, units = "px", dpi =  150)
+
+gp
+```
+
+
+# So what races get promoted most:
+
+```{r}
+res <- all_mbt %>% 
+  group_by(action, season, race_name, tsl_tier) %>%
+  summarise(n_coaches = n_distinct(coach_name))
+
+ggplot(res, aes(x = reorder(race_name, n_coaches), y = n_coaches, color = factor(action))) +
+  geom_point(position = position_dodge(width = 0.9)) + coord_flip() + expand_limits(y = 0) +
+  scale_size_area() + ggtitle("FUMBBL Super League actions by race ") +
+  facet_wrap(~ season) +
+  labs(y = "Win rate (%)", x = "") + geom_hline( yintercept = 1, col = "grey")
+```
 
 
 ## THE COMMITMENT
@@ -399,7 +512,8 @@ Please select "Create Team for this League" at the top of this page.
 
 Minimum of 11 players
 
-In order to award skills to your players - please use Team Options - Skill Settings. Only one skill per player allowed unless tiering permits it.
+In order to award skills to your players - please use Team Options - Skill Settings. 
+Only one skill per player allowed unless tiering permits it.
 
 All boxes must be filled. Therefore you may need to select "No Skill" for some of your players.
 
@@ -438,20 +552,52 @@ Championship Winners: Storr (Darkelf) and Siggi (Amazon)
 Placements from Season 0 and coaches who dropped out during a running season do not qualify for this rule."
 ```
 
-Seeding are handled in sheets atm.
-
 # ANALYSIS Straight up win rates 
 
 ```{r fig.height= 8, fig.width = 8}
 res <- all_mbt %>%
-  group_by(race_name) %>%
+  group_by(race_name, tsl_tier) %>%
   summarise(n_games = n(),
             win_rate = mean(wins))
 
-ggplot(res, aes(x = reorder(race_name, win_rate), y = win_rate)) +
+ggplot(res, aes(x = reorder(race_name, win_rate), y = win_rate, color = factor(tsl_tier))) +
   geom_point(aes(size = n_games)) + coord_flip() + expand_limits(y = 0) +
   scale_size_area() + ggtitle("FUMBBL Super League win rates ") +
   labs(y = "Win rate (%)", x = "") + geom_hline( yintercept =  0.5, col = "black")
+```
+We can also calculate average tier by division.
+
+```{r}
+res <- all_mbt %>%
+  group_by(season, level) %>%
+  summarise(n_games = n(),
+            avg_tier = mean(tsl_tier))
+
+ggplot(res, aes(x = level, y = avg_tier, color = factor(season))) +
+  geom_point(aes(size = n_games)) + coord_flip() + expand_limits(y = 0) +
+  scale_size_area() + ggtitle("FUMBBL Super League average tiers by division ") +
+  facet_wrap(~ season) + 
+  labs(y = "Average tier", x = "") + geom_hline( yintercept =  1, col = "black")
+```
+We can also look at what levels the various races are playing.
+
+```{r}
+res <- all_mbt %>%
+  filter(level > 0) %>%
+  group_by(race_name, season, tsl_tier) %>%
+  summarise(n_games = n(),
+            avg_level = mean(level))
+
+ggplot(res, aes(x = reorder(race_name, -avg_level), y = avg_level, color = factor(tsl_tier))) +
+  geom_point(aes(size = n_games)) + coord_flip() + expand_limits(y = 0) +
+  scale_size_area() + ggtitle("FUMBBL Super League average level by race ") +
+  facet_wrap(~ season) +
+  labs(y = "Average tier", x = "") + geom_hline( yintercept =  1, col = "black")
+```
+Ok, so coaches can change race from season to season. 
+
+```{r}
+
 ```
 
 
