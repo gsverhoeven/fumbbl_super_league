@@ -440,24 +440,68 @@ s3 <- all_mbt %>% filter(season == 2) %>%
 
 coach_levels <- rbind(s1s2, s3)
 
-coach_sel <- coach_levels %>% 
-  filter(season == 3 & level %in% c(1,2))  %>%
-  pull(coach_name)
+coach_levels <- coach_levels %>%
+  mutate(weight = 7 - level)
+```
 
-gp <- ggplot(coach_levels %>% filter(coach_name %in% coach_sel), aes(y = reorder(coach_name, -level), x = season)) +
+# Create and plot overall ranking
+
+add trophies for tie breaker:
+
+```{r}
+coach_levels <- coach_levels %>%
+  mutate(trophies = 0) %>%
+  mutate(trophies = ifelse(coach_name == "Strider84" & season == 1, 2, trophies),
+         trophies = ifelse(coach_name == "Purplegoo" & season == 1, 1, trophies),
+         trophies = ifelse(coach_name == "LemonheadWallenstein" & season == 1, 1, trophies),
+         trophies = ifelse(coach_name == "Purplegoo" & season == 2, 2, trophies),
+         trophies = ifelse(coach_name == "Storr" & season == 2, 1, trophies),
+         trophies = ifelse(coach_name == "siggi" & season == 2, 1, trophies)) 
+```
+
+```{r}
+coach_ranking <- coach_levels %>%
+  group_by(coach_name) %>%
+  summarise(ranking = sum(weight),
+            tie_breaker = sum(trophies)) %>%
+  arrange(-ranking, -tie_breaker) %>%
+  mutate(sort_order = 1:n())
+
+coach_levels <- coach_levels %>%
+  left_join(coach_ranking, by = "coach_name")
+```
+
+
+
+
+```{r}
+level <- c(1:6)
+short_text <- c("PL", "CH", "D1", "D2", "D3", "D4")
+
+coach_levels <- coach_levels %>%
+  left_join(tibble(level, short_text), by = "level")
+```
+
+
+
+```{r}
+gp <- ggplot(coach_levels %>% filter(ranking > 12), aes(y = reorder(coach_name, -sort_order), x = season)) +
   geom_tile(aes(fill = -level), color = "white", lwd = 1.5, linetype = 1) +
-  geom_text(aes(label = level), color = "white", size = 2) +
-  scale_x_discrete(position = "top") + 
-  coord_fixed(0.5) +
+  geom_text(aes(label = short_text), color = "black", size = 2) +
+  scale_x_continuous(position = "top") + 
+  scale_fill_gradient(low = "darkorange", high = "gold1") +
+  coord_fixed(0.4) +
   ylab("") +
   theme_bw() +
-  theme(legend.position="none")  
+  theme(legend.position="none")  +
+  ggtitle("Super League\n overall ranking")
 
-ggsave("rel_pro_coaches.png", gp, width = 400, height = 800, units = "px", dpi =  150)
+ggsave("rel_pro_coaches.png", gp, width = 600, height = 800, units = "px", dpi =  150)
 
 gp
 ```
 
+PM need more tiebreakers, final placements from s1 andf s2?
 
 # So what races get promoted most:
 
