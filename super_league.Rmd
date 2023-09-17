@@ -459,19 +459,45 @@ coach_levels <- coach_levels %>%
          trophies = ifelse(coach_name == "siggi" & season == 2, 1, trophies)) 
 ```
 
+add placement by coach by season for tie breaker:
+
+```{r}
+coach_levels <- coach_levels %>%
+  left_join(main_board %>% ungroup() %>% select(coach_name, season, position) , by = c("coach_name", "season"))
+```
+
+
+Calculate ranking, first by division weight, second by trophies, and third by placement within divisions.
+
 ```{r}
 coach_ranking <- coach_levels %>%
   group_by(coach_name) %>%
   summarise(ranking = sum(weight),
-            tie_breaker = sum(trophies)) %>%
-  arrange(-ranking, -tie_breaker) %>%
+            n_seasons = n(),
+            tie_breaker = sum(trophies),
+            placement = mean(position, na.rm = T)) %>%
+  arrange(-ranking, -tie_breaker, placement) %>%
   mutate(sort_order = 1:n())
 
 coach_levels <- coach_levels %>%
   left_join(coach_ranking, by = "coach_name")
 ```
 
+```{r}
+coach_ranking2 <- coach_levels %>%
+  filter(season == 3) %>%
+  group_by(coach_name) %>%
+  summarise(ranking = sum(weight),
+            n_seasons = n(),
+            tie_breaker = sum(trophies),
+            placement = mean(position, na.rm = T)) %>%
+  arrange(-ranking, -tie_breaker, placement) %>%
+  mutate(sort_order2 = 1:n()) %>%
+  select(coach_name, sort_order2)
 
+coach_levels <- coach_levels %>%
+  left_join(coach_ranking2, by = "coach_name")
+```
 
 
 ```{r}
@@ -483,6 +509,8 @@ coach_levels <- coach_levels %>%
 ```
 
 
+
+# Overall coach ranking
 
 ```{r}
 gp <- ggplot(coach_levels %>% filter(ranking > 12), aes(y = reorder(coach_name, -sort_order), x = season)) +
@@ -501,21 +529,39 @@ ggsave("rel_pro_coaches.png", gp, width = 600, height = 800, units = "px", dpi =
 gp
 ```
 
-PM need more tiebreakers, final placements from s1 andf s2?
-
-# So what races get promoted most:
+# coach history of current top divisions (PL and CH)
 
 ```{r}
-res <- all_mbt %>% 
-  group_by(action, season, race_name, tsl_tier) %>%
-  summarise(n_coaches = n_distinct(coach_name))
+coach_sel <- coach_levels %>%
+  filter(season == 3 & short_text %in% c("PL", "CH")) %>%
+  distinct() %>% pull(coach_name)
 
-ggplot(res, aes(x = reorder(race_name, n_coaches), y = n_coaches, color = factor(action))) +
-  geom_point(position = position_dodge(width = 0.9)) + coord_flip() + expand_limits(y = 0) +
-  scale_size_area() + ggtitle("FUMBBL Super League actions by race ") +
-  facet_wrap(~ season) +
-  labs(y = "Win rate (%)", x = "") + geom_hline( yintercept = 1, col = "grey")
+gp <- ggplot(coach_levels %>% filter(coach_name %in% coach_sel), aes(y = reorder(coach_name, -sort_order2), x = season)) +
+  geom_tile(aes(fill = -level), color = "white", lwd = 1.5, linetype = 1) +
+  geom_text(aes(label = short_text), color = "black", size = 2) +
+  scale_x_continuous(position = "top") + 
+  scale_fill_gradient(low = "darkorange", high = "gold1") +
+  coord_fixed(0.4) +
+  ylab("") +
+  theme_bw() +
+  theme(legend.position="none")  +
+  ggtitle("Super League\n Season 3 top coaches")
+
+ggsave("s3_top_coaches.png", gp, width = 600, height = 800, units = "px", dpi =  150)
+
+gp
 ```
+
+This shows us the road to the top.
+In season 0, there were 77 coaches. In oktober 2022 the league was filled for the first time.
+To fill the first four levels (PL, CH, D1, D2) required 88 coaches.
+So new recruits started in D2 in season 1, after that D3 and D4 were created.
+"Season one was the season of shortcuts" (Lorebass)
+New coaches for season one got randomized.
+
+Storr: The Super League is designed as a tiered league with a pyramid structure to allow coaches to play against opponents of their own level. This is done intentionally in contrast to the TSD, where we have completely random divisions each season with a playoff at the end. We do have a rather high number of relegations and promotions to allow everyone to pass rather quickly to the tier they "should" be in, but we need to try to keep the balance between the two. I know it is a bit unfortunate to join now and having to take the long way to the top, but that's what it is in a tiered league. There will not be a reset in the Super League, as that would be against the very nature and idea of the league. There is, however, the option to make the lower tiers a bit wider, as we don't follow through with the pyramid structure through all tiers at the moment. The reason for that is that the league grew quite large rather quick, and a decision was made to implement the divisional structure as it is now, possibly because it fit the participant numbers well (i.e. "historical reasons). We will think about expanding the pyramid structure, especially if the league grows even further, as we also don't want to handle a giant swiss division at the bottom (ask LemonheadWallenstein why), but I won't make any promises.
+
+discord started in march 2023.
 
 
 ## THE COMMITMENT
@@ -609,76 +655,30 @@ ggplot(res, aes(x = reorder(race_name, win_rate), y = win_rate, color = factor(t
   scale_size_area() + ggtitle("FUMBBL Super League win rates ") +
   labs(y = "Win rate (%)", x = "") + geom_hline( yintercept =  0.5, col = "black")
 ```
-We can also calculate average tier by division.
+
+# What are the successful team choices in S2?
 
 ```{r}
-res <- all_mbt %>%
-  group_by(season, level) %>%
-  summarise(n_games = n(),
-            avg_tier = mean(tsl_tier))
+# succesfull coaches in S2
+coach_sel <- s3 %>%
+  filter(level < 4) %>% # i.e. PL, CH, D1
+  distinct() %>% pull(coach_name)
 
-ggplot(res, aes(x = level, y = avg_tier, color = factor(season))) +
-  geom_point(aes(size = n_games)) + coord_flip() + expand_limits(y = 0) +
-  scale_size_area() + ggtitle("FUMBBL Super League average tiers by division ") +
-  facet_wrap(~ season) + 
-  labs(y = "Average tier", x = "") + geom_hline( yintercept =  1, col = "black")
-```
-We can also look at what levels the various races are playing.
-
-```{r}
 res <- all_mbt %>%
-  filter(level > 0) %>%
-  group_by(race_name, season, tsl_tier) %>%
+  filter(season == 2 & coach_name %in% coach_sel) %>%
+  group_by(race_name, tsl_tier) %>%
   summarise(n_games = n(),
+            n_coaches = n()/7,
             avg_level = mean(level))
 
 ggplot(res, aes(x = reorder(race_name, -avg_level), y = avg_level, color = factor(tsl_tier))) +
-  geom_point(aes(size = n_games)) + coord_flip() + expand_limits(y = 0) +
-  scale_size_area() + ggtitle("FUMBBL Super League average level by race ") +
-  facet_wrap(~ season) +
+  geom_point(aes(size = n_coaches)) + coord_flip() + expand_limits(y = 0) +
+  scale_size_area() + ggtitle("S2 Teams played by coaches that qualified for\n top three divisions in S3") +
   labs(y = "Average tier", x = "") + geom_hline( yintercept =  1, col = "black")
 ```
-Ok, so coaches can change race from season to season. 
-
-```{r}
-
-```
-
-
-```{r}
-res_list <- list(main_result = res %>% arrange(-win_rate))
-res_list$main_result
-```
 
 
 
-# Win rates by coach
-
-
-```{r fig.height= 8, fig.width = 8}
-res <- df_mbt %>%
-  group_by(coach_name) %>%
-  summarise(n_games = n(),
-            win_rate = mean(wins))
-
-ggplot(res %>% filter(n_games >= 14), aes(x = reorder(coach_name, win_rate), y = win_rate)) +
-  geom_point() + coord_flip() + expand_limits(y = 0) +
-  scale_size_area() + ggtitle("FUMBBL Super League win rates \n (by coach)") +
-  labs(y = "Win rate (%)", x = "") + geom_hline( yintercept =  0.5, col = "black")
-```
-
-```{r}
-res_list <- append(res_list, 
-                   list(win_rates_by_group = res %>% arrange(-win_rate)))
-```
-
-# write  excel
-
-```{r}
-selection_of_tables <- c("main_result", "win_rates_by_group")
-
-writexl::write_xlsx(res_list[selection_of_tables], "230815 FUMBBL_super_league.xlsx")
-```
 
 
 
