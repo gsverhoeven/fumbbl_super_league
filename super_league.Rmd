@@ -665,19 +665,27 @@ coach_sel <- s3 %>%
   distinct() %>% pull(coach_name)
 
 res <- all_mbt %>%
-  filter(season == 2 & coach_name %in% coach_sel) %>%
+  filter(season == 2 & coach_name %in% coach_sel & action %in% c("promote", "remain")) %>%
   group_by(race_name, tsl_tier) %>%
   summarise(n_games = n(),
             n_coaches = n()/7,
             avg_level = mean(level))
 
-ggplot(res, aes(x = reorder(race_name, -avg_level), y = avg_level, color = factor(tsl_tier))) +
-  geom_point(aes(size = n_coaches)) + coord_flip() + expand_limits(y = 0) +
-  scale_size_area() + ggtitle("S2 Teams played by coaches that qualified for\n top three divisions in S3") +
-  labs(y = "Average tier", x = "") + geom_hline( yintercept =  1, col = "black")
+ggplot(res, aes(x = reorder(race_name, n_coaches), y = n_coaches, shape = factor(tsl_tier))) +
+  geom_point(size = 3) + coord_flip() + expand_limits(y = 0) +
+  scale_size_area() + ggtitle("Which teams did successful coaches in the top divisions pick in S2") +
+  labs(y = "Number of coaches", x = "") 
 ```
 
 
+```{r}
+res <- all_mbt %>%
+  filter(season == 2 & coach_name %in% coach_sel & action %in% c("promote", "remain")) %>%
+  group_by(coach_name, tournament_name, race_name, tsl_tier, action) %>%
+  summarise(n_games = n(),
+            n_coaches = n()/7,
+            avg_level = mean(level))
+```
 
 
 
