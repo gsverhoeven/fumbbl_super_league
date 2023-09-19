@@ -36,9 +36,9 @@ if(fullrun){
   
   df_matches$match_date <- as.Date(df_matches$match_date)
   df_matches$week_date <- as.Date(df_matches$week_date)
-  saveRDS(df_matches, "df_matches_tsl.rds")
+  saveRDS(df_matches, "data/df_matches_tsl.rds")
 } else {
-  df_matches <- readRDS("df_matches_tsl.rds")
+  df_matches <- readRDS("data/df_matches_tsl.rds")
 }
 ```
 
@@ -57,9 +57,9 @@ if(fullrun){
   
   df_mbt[df_mbt$race_name == "Khorne",]$bb2020_nov21_tier <- 2
   df_mbt[df_mbt$race_name == "Khorne",]$bb2020_tier <- 2
-  saveRDS(df_mbt, "df_mbt_tsl.rds")
+  saveRDS(df_mbt, "data/df_mbt_tsl.rds")
 } else {
-  df_mbt <- readRDS("df_mbt_tsl.rds")
+  df_mbt <- readRDS("data/df_mbt_tsl.rds")
 }
 ```
 
@@ -72,7 +72,7 @@ df_mbt[df_mbt$coach_name == "Edwin25301",]$coach_name <- "Edwin"
 # Add seasons, levels
 
 ```{r}
-cl <- as_tibble(read.csv2("spl_seasons_div.csv")) %>% 
+cl <- as_tibble(read.csv2("input/spl_seasons_div.csv")) %>% 
   select(-tournament_name)
 ```
 
@@ -100,9 +100,9 @@ if(fullrun){
     else all_matches <- rbind(all_matches, data.frame(tournament_id, flatten(fromJSON(rawToChar(res$content)))))
     i <- i+1
   }
-  saveRDS(all_matches, file = "all_matches.rds")
+  saveRDS(all_matches, file = "data/all_matches.rds")
 } else {
-  all_matches <- readRDS("all_matches.rds")
+  all_matches <- readRDS("data/all_matches.rds")
 }
 ```
 
@@ -182,9 +182,9 @@ if(fullrun){
     else all_teams <- rbind(all_teams, data.frame(team_id, flatten(as.data.frame(fromJSON(rawToChar(res$content))$coach))))
     i <- i+1
   }
-  saveRDS(all_teams, file = "all_teams.rds")
+  saveRDS(all_teams, file = "data/all_teams.rds")
 } else {
-  all_teams <- readRDS("all_teams.rds")
+  all_teams <- readRDS("data/all_teams.rds")
 }
 ```
 
@@ -243,7 +243,7 @@ main_board <- all_mbt %>%
 
 
 ```{r}
-writexl::write_xlsx(main_board, "main_board.xlsx")
+writexl::write_xlsx(main_board, "output/main_board.xlsx")
 ```
 
 eyeball who replaced who.
@@ -251,7 +251,7 @@ eyeball who replaced who.
 # read back in: fix replacement coaches
 
 ```{r}
-main_board <- readxl::read_excel("main_board_replacedby.xlsx")
+main_board <- readxl::read_excel("input/main_board_replacedby.xlsx")
 
 replaced_by <- main_board %>% 
   select(tournament_id, coach_name, replaced_by) %>% 
@@ -309,7 +309,7 @@ all_mbt <- all_mbt %>%
 #tsl_tiers <- data.frame(race_name = unique(all_mbt$race_name), tsl_tier = -1)
 #writexl::write_xlsx(tsl_tiers, "tsl_tiers.xlsx")
 
-tsl_tiers <- readxl::read_excel("tsl_tiers.xlsx")
+tsl_tiers <- readxl::read_excel("input/tsl_tiers.xlsx")
 
 all_mbt <- all_mbt %>%
   left_join(tsl_tiers, by = "race_name")
@@ -384,7 +384,7 @@ New coaches for season one got randomized.
 discord started in march 2023, before the start of season two.
 
 
-![](pyramid.png)
+![](figures/pyramid.png)
 
 This is a competitive resurrection (non-progression) league which uses promotion and relegation.The exact structure will be decided (depending on player numbers) at the start of each season.
 
@@ -509,7 +509,7 @@ main_board <- all_mbt %>%
 main_board$position <- rep(1:8, nrow(main_board)/8) 
 
 #writexl::write_xlsx(main_board %>% select(season, tournament_id, tournament_name, coach_name, position), "promotion_relegation_structure_.xlsx")
-promotion_relegation_structure <- readxl::read_excel("promotion_relegation_structure.xlsx")
+promotion_relegation_structure <- readxl::read_excel("input/promotion_relegation_structure.xlsx")
 
 all_mbt <- all_mbt %>%
   left_join(promotion_relegation_structure %>% select(tournament_id, coach_name, action), by = c("tournament_id", "coach_name"))
@@ -627,7 +627,7 @@ gp <- ggplot(coach_levels %>% filter(ranking > 12), aes(y = reorder(coach_name, 
   theme(legend.position="none")  +
   ggtitle("Super League\n overall ranking")
 
-ggsave("rel_pro_coaches.png", gp, width = 600, height = 800, units = "px", dpi =  150)
+ggsave("output/rel_pro_coaches.png", gp, width = 600, height = 800, units = "px", dpi =  150)
 
 gp
 ```
@@ -650,7 +650,7 @@ gp <- ggplot(coach_levels %>% filter(coach_name %in% coach_sel), aes(y = reorder
   theme(legend.position="none")  +
   ggtitle("Super League\n Season 3 top division coach history")
 
-ggsave("s3_top_coaches.png", gp, width = 600, height = 800, units = "px", dpi =  150)
+ggsave("output/s3_top_coaches.png", gp, width = 600, height = 800, units = "px", dpi =  150)
 
 gp
 ```
