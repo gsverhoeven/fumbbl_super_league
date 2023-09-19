@@ -672,10 +672,13 @@ res <- all_mbt %>%
             n_coaches = n()/7,
             avg_level = mean(level))
 
-ggplot(res, aes(x = reorder(race_name, n_coaches), y = n_coaches, shape = factor(tsl_tier))) +
+gp <- ggplot(res, aes(x = reorder(race_name, n_coaches), y = n_coaches, shape = factor(tsl_tier))) +
   geom_point(size = 3) + coord_flip() + expand_limits(y = 0) +
-  scale_size_area() + ggtitle("Which teams did successful coaches in the top divisions pick in S2") +
+  scale_size_area() + ggtitle("Which teams did successful coaches\n in the top divisions pick in S2") +
   labs(y = "Number of coaches", x = "") 
+
+ggsave("output/successful_coach_team_picks.png", gp, width = 1000, height = 600, units = "px", dpi =  150)
+gp
 ```
 
 
@@ -686,6 +689,8 @@ res <- all_mbt %>%
   summarise(n_games = n(),
             n_coaches = n()/7,
             avg_level = mean(level))
+
+res
 ```
 
 
