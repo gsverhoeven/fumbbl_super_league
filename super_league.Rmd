@@ -648,9 +648,9 @@ gp <- ggplot(coach_levels %>% filter(coach_name %in% coach_sel), aes(y = reorder
   ylab("") +
   theme_bw() +
   theme(legend.position="none")  +
-  ggtitle("Super League\n Season 3 top division coach history")
+  ggtitle("Super League season 3\n top division coach history")
 
-ggsave("output/s3_top_coaches.png", gp, width = 600, height = 800, units = "px", dpi =  150)
+ggsave("output/s3_top_coaches.png", gp, width = 650, height = 800, units = "px", dpi =  150)
 
 gp
 ```
